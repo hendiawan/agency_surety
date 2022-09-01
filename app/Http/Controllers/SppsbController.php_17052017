@@ -1,0 +1,464 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Auth;
+use DB;
+use Datatables;
+use App\Sppsb;
+use App\History;
+use App\Rate;
+use App\Option;
+use App\Result;
+use App\Agen;
+use App\User;
+use Mail;
+use App\Mail\Reminder;
+use Illuminate\Support\Facades\Session;
+use Illuminate\Http\Request;
+
+class SppsbController extends Controller
+{
+    /**
+     * Create a new controller instance.
+     *
+     * @return void
+     */
+    public function __construct()
+    {
+        $this->middleware('auth');
+    }
+
+    public function disetujui()
+    {
+        return view('common.sppsbsetuju');
+    }
+
+    public function getDisetujuiTable()
+    {
+        if(Auth::user()->role=='AA'){
+            $sppsb = DB::table('sppsb')
+                            ->select('sppsb.id',
+                                    'sppsb.nama_kontraktor',
+                                    'sppsb.direksi',
+                                    'sppsb.status',
+                                    'sppsb.jenis_sppsb',
+                                    'historys.author',
+                                    'historys.remark',
+                                    DB::raw("(DATE_FORMAT(historys.created_at,'%d/%m/%Y')) AS tgl_disetujui"),
+                                    DB::raw("(DATE_FORMAT(sppsb.created_at,'%d/%m/%Y')) AS tgl_pengajuan")
+                            )
+                            ->leftJoin('historys','historys.sppsb_id','=','sppsb.id')
+                            ->where([
+                                ['historys.proses','Setuju'],
+                                ['sppsb.user_id',Auth::user()->id],
+                                ['sppsb.status','=','S'],
+                            ])
+                            ->orWhere([
+                                ['historys.proses','Closing'],
+                                ['sppsb.user_id',Auth::user()->id],
+                                ['sppsb.status','=','C'],
+                            ])
+                            ->orderBy('sppsb.created_at','DESC')
+                            ->get(); 
+        }else{
+            $sppsb = DB::table('sppsb')
+                            ->select('sppsb.id',
+                                    'sppsb.nama_kontraktor',
+                                    'sppsb.direksi',
+                                    'sppsb.status',
+                                    'sppsb.jenis_sppsb',
+                                    'historys.author',
+                                    'historys.remark',
+                                    DB::raw("(DATE_FORMAT(historys.created_at,'%d/%m/%Y')) AS tgl_disetujui"),
+                                    DB::raw("(DATE_FORMAT(sppsb.created_at,'%d/%m/%Y')) AS tgl_pengajuan")
+                            )
+                            ->leftJoin('historys','historys.sppsb_id','=','sppsb.id')
+                            ->where([
+                                ['historys.proses','Setuju'],
+                                ['sppsb.status','=','S'],
+                            ])
+                            ->orWhere([
+                                ['historys.proses','Closing'],
+                                ['sppsb.status','=','C'],
+                            ])
+                            ->orderBy('sppsb.created_at','DESC')
+                            ->get(); 
+        }
+
+        return Datatables::of($sppsb)
+            ->addColumn('action', function ($sppsb) {
+                return '<div class="btn-group btn-group-sm" role="group" aria-label="...">
+                                <a href="sppsb-detail/'.$sppsb->id.'" class="icon-button icon-color-grey">
+                                    <i class="fa fa-search"></i>
+                                </a>
+                            </div>';
+            })
+            ->make(true);
+    }
+
+    public function ditolak()
+    {
+        return view('common.sppsbtolak');
+    }
+
+    public function getDitolakTable()
+    {
+        if(Auth::user()->role=='AA'){
+            $sppsb = DB::table('sppsb')
+                            ->select('sppsb.id',
+                                    'sppsb.nama_kontraktor',
+                                    'sppsb.direksi',
+                                    'sppsb.status',
+                                    'sppsb.jenis_sppsb',
+                                    'historys.author',
+                                    'historys.remark',
+                                    DB::raw("(DATE_FORMAT(historys.created_at,'%d/%m/%Y')) AS tgl_penolakan"),
+                                    DB::raw("(DATE_FORMAT(sppsb.created_at,'%d/%m/%Y')) AS tgl_pengajuan")
+                            )
+                            ->leftJoin('historys','historys.sppsb_id','=','sppsb.id')
+                            ->where([
+                                ['historys.proses','Tolak'],
+                                ['sppsb.user_id',Auth::user()->id],
+                                ['sppsb.status','=','T'],
+                            ])
+                            ->orderBy('sppsb.created_at','DESC')
+                            ->get(); 
+        }else{
+            $sppsb = DB::table('sppsb')
+                            ->select('sppsb.id',
+                                    'sppsb.nama_kontraktor',
+                                    'sppsb.direksi',
+                                    'sppsb.status',
+                                    'sppsb.jenis_sppsb',
+                                    'historys.author',
+                                    'historys.remark',
+                                    DB::raw("(DATE_FORMAT(historys.created_at,'%d/%m/%Y')) AS tgl_penolakan"),
+                                    DB::raw("(DATE_FORMAT(sppsb.created_at,'%d/%m/%Y')) AS tgl_pengajuan")
+                            )
+                            ->leftJoin('historys','historys.sppsb_id','=','sppsb.id')
+                            ->where([
+                                ['historys.proses','Tolak'],
+                                ['sppsb.status','=','T'],
+                            ])
+                            ->orderBy('sppsb.created_at','DESC')
+                            ->get(); 
+        }
+
+        return Datatables::of($sppsb)
+            ->addColumn('action', function ($sppsb) {
+                return '<div class="btn-group btn-group-sm" role="group" aria-label="...">
+                                <a href="sppsb-detail/'.$sppsb->id.'" class="icon-button icon-color-grey">
+                                    <i class="fa fa-search"></i>
+                                </a>
+                            </div>';
+            })
+            ->make(true);
+    }
+
+    public function detail($id)
+    {
+        $sppsb = Sppsb::findOrFail($id);     
+        $agen = DB::table('agens')
+                ->select(
+                    'agens.no_agen',
+                    'agens.wilayah_agensi',
+                    'agens.code_wilayah',
+                    'agens.fee_sppsb',
+                    'users.name')
+                ->leftJoin('users','users.id','=','agens.user_id')
+                ->where('users.id', $sppsb->user_id)->first();
+
+        $dokPendukung = json_decode($sppsb->dokumen_pendukung);
+        $brgAgunan = json_decode($sppsb->barang_agunan);
+        
+        $nilaiProyek = ucwords($this->terbilang($sppsb->nilai_proyek));
+        $nilaiJaminan = ucwords($this->terbilang($sppsb->nilai_jaminan));
+
+        $admin = Option::findOrFail('2');
+        $materai = Option::findOrFail('3');
+
+        if($sppsb->status=='C' || $sppsb->status=='S'){
+            $result = Result::where('sppsb_id',$sppsb->id)->first();
+
+            $charge = $result->service_charge;
+            $rate = $result->rate_ijp;
+            $fee = $result->fee_agen;
+            $feeAdmin = $result->fee_admin;
+            $materai = $result->materai;
+        }else{            
+            $serviceCharge = ceil((new DireksiController)->calculateIjp($sppsb->waktu_mulai,$sppsb->waktu_selesai,$sppsb->nilai_jaminan,$sppsb->jenis_sppsb,$admin->value,$materai->value));
+            $charge = (new DireksiController)->pembulatan($serviceCharge);
+
+            $rate = $this->getRate($sppsb->waktu_mulai, $sppsb->waktu_selesai, $sppsb->jenis_sppsb);
+            $fee = $agen->fee_sppsb;
+            $feeAdmin = $admin->value;
+            $materai = $materai->value;
+        }
+        $grossIjp = ($sppsb->nilai_jaminan*$rate)/100;
+        $feeAgen = ($grossIjp*$fee)/100;
+	
+	$history = '';
+	if($sppsb->status=='R'){
+            $where = ['proses' => 'revisi', 'sppsb_id' => $id];
+            $history = History::where($where)->first();
+        }elseif($sppsb->status=='T'){
+            $where = ['proses' => 'tolak', 'sppsb_id' => $id];
+            $history = History::where($where)->first();
+        }
+        
+
+        return view('common.detailsppsb', compact('sppsb','agen','dokPendukung','brgAgunan','nilaiProyek','nilaiJaminan','history','charge','rate','grossIjp','feeAgen','fee','feeAdmin','materai'));
+    }
+
+    public function update(Request $request)
+    {
+        
+        
+        $data = $request->all();
+        //update status
+        $sppsb = Sppsb::findOrFail($data['id']);
+
+        if($data['status']=='B'){
+            $remark = '';
+            $proses = 'Baru';
+            $users = User::where('role','SA')->get();
+            foreach($users as $user)
+            {
+                Mail::to($user->email,$user->name)->send(new Reminder($data));
+            }
+        }elseif($data['status']=='P'){
+            $remark = '';
+            $proses = 'Proses';
+
+            Mail::to('direksi@agenjnb.com')->send(new Reminder($data));
+        }elseif($data['status']=='R'){            
+            $remark = $data['remark'];
+            $proses = 'Revisi';
+        }elseif($data['status']=='T'){            
+            $remark = $data['remark'];
+            $proses = 'Tolak';
+        }
+
+        $sppsb->status = $data['status'];
+        $sppsb->updated_by = Auth::user()->username;
+        $sppsb->save();
+        //insert new history
+        $history = History::create([
+            'sppsb_id'  => $data['id'],
+            'proses'    => $proses,
+            'author'    => Auth::user()->name,
+            'remark'    => $remark
+        ]);
+        if($data['status']=='B'){
+            Session::flash('msgupdate','SPPSB dengan no registrasi '.$sppsb->no_registrasi.' berhasil di kirim ke staff surety bond');
+            return redirect('/sppsb-sp3kbg-data-table');
+        }else{   
+            Session::flash('msgupdate','SPPSB dengan no registrasi '.$sppsb->no_registrasi.' berhasil di update dengan status '.$proses.'');
+            return redirect('/sppsb-sp3kbg-masuk');
+        }
+    }
+
+    public function laporan()
+    {
+        if(Auth::user()->role=='AA'){
+            $agen = DB::table('users')
+                    ->select('users.name','agens.no_agen','agens.code_wilayah','agens.wilayah_agensi')
+                    ->leftJoin('agens','agens.user_id','=','users.id')
+                    ->where('users.id',Auth::user()->id)->first();
+            return view('agen.laporan',compact('agen'));
+        }else{
+            $agen = User::where('role','AA')->get();
+            return view('staff.laporan',compact('agen'));
+        }
+    }
+    ///report untuk halaman laporan staff dan agen
+    public function getDataReportAgen()
+    {
+
+        $id         = $_GET['id'];
+        $startDate  = $_GET['startDate'];
+        $endDate  = $_GET['endDate'];
+
+        if($startDate=="" || $endDate==""){
+            $report = DB::table(DB::raw('v_report, (SELECT @rownum := 0) r'))
+                        ->select('v_report.*', DB::raw('@rownum := @rownum + 1 AS rank'))->where('user_id',$id)->get();
+        }else{            
+            $startDate  = date('Y-m-d', strtotime($_GET['startDate']));
+            $endDate    = date('Y-m-d', strtotime($_GET['endDate'])); 
+
+            $report = DB::table(DB::raw('v_report, (SELECT @rownum := 0) r'))
+                        ->select('v_report.*', DB::raw('@rownum := @rownum + 1 AS rank'))
+                        ->where('user_id',$id)
+                        ->whereBetween('created_at',[$startDate,$endDate])->get();
+        }
+        return Datatables::of($report)
+            ->editColumn('nilai_jaminan', function ($report) {
+                return number_format($report->nilai_jaminan, 2,",",".");
+            })
+            ->editColumn('gross_ijp', function ($report) {
+                return number_format($report->gross_ijp, 2,",",".");
+            })
+            ->editColumn('fee_admin', function ($report) {
+                return number_format($report->fee_admin, 2,",",".");
+            })
+            ->editColumn('fee_agen', function ($report) {
+                return number_format($report->fee_agen, 2,",",".");
+            })
+            ->editColumn('net_ijp', function ($report) {
+                return number_format($report->net_ijp, 2,",",".");
+            })
+            ->make(true);
+    }
+    
+    public function getDataRekapAgen()
+    {
+        $startDate  = date('Y-m-d', strtotime($_GET['startDate']));
+        $endDate    = date('Y-m-d', strtotime($_GET['endDate'])); 
+
+        $report = DB::table(DB::raw('v_status, (SELECT @rownum := 0) r'))
+                        ->select(
+                            DB::raw('@rownum := @rownum + 1 AS rank'),
+                            'v_status.name',
+                            DB::raw('SUM(v_status.count_terbit) AS count_terbit'),
+                            DB::raw('SUM(v_status.count_belum) AS count_belum'),
+                            DB::raw('SUM(v_status.gross_ijp) AS gross_ijp'),
+                            DB::raw('SUM(v_status.fee_admin) AS fee_admin'),
+                            DB::raw('SUM(v_status.fee_agen) AS fee_agen'),
+                            DB::raw('SUM(v_status.net_ijp) AS net_ijp')
+                        )
+                        ->whereBetween('v_status.created_at',[$startDate,$endDate])
+                        ->get();
+        return Datatables::of($report)
+            ->editColumn('gross_ijp', function ($report) {
+                return number_format($report->gross_ijp, 2,",",".");
+            })
+            ->editColumn('fee_admin', function ($report) {
+                return number_format($report->fee_admin, 2,",",".");
+            })
+            ->editColumn('fee_agen', function ($report) {
+                return number_format($report->fee_agen, 2,",",".");
+            })
+            ->editColumn('net_ijp', function ($report) {
+                return number_format($report->net_ijp, 2,",",".");
+            })
+            ->make(true);
+    }
+
+    public function getDataRekapWilayah()
+    {
+        $startDate  = date('Y-m-d', strtotime($_GET['startDate']));
+        $endDate    = date('Y-m-d', strtotime($_GET['endDate'])); 
+
+        $report = DB::table(DB::raw('v_status, (SELECT @rownum := 0) r'))
+                        ->select(
+                            DB::raw('@rownum := @rownum + 1 AS rank'),
+                            'v_status.wilayah_agensi',
+                            DB::raw('SUM(v_status.count_terbit) AS count_terbit'),
+                            DB::raw('SUM(v_status.count_belum) AS count_belum'),
+                            DB::raw('SUM(v_status.gross_ijp) AS gross_ijp'),
+                            DB::raw('SUM(v_status.fee_admin) AS fee_admin'),
+                            DB::raw('SUM(v_status.fee_agen) AS fee_agen'),
+                            DB::raw('SUM(v_status.net_ijp) AS net_ijp')
+                        )
+                        ->whereBetween('v_status.created_at',[$startDate,$endDate])
+                        ->groupBy('v_status.wilayah_agensi')->get();
+        return Datatables::of($report)
+            ->editColumn('gross_ijp', function ($report) {
+                return number_format($report->gross_ijp, 2,",",".");
+            })
+            ->editColumn('fee_admin', function ($report) {
+                return number_format($report->fee_admin, 2,",",".");
+            })
+            ->editColumn('fee_agen', function ($report) {
+                return number_format($report->fee_agen, 2,",",".");
+            })
+            ->editColumn('net_ijp', function ($report) {
+                return number_format($report->net_ijp, 2,",",".");
+            })
+            ->make(true);
+    }
+
+    public function getDataBlmTerbit()
+    {
+        $id         = $_GET['id'];
+
+        $report     = DB::table(DB::raw('sppsb, (SELECT @rownum := 0) r'))
+                        ->select('sppsb.id','sppsb.no_registrasi', DB::raw('@rownum := @rownum + 1 AS rank'))
+                        ->where('sppsb.user_id',$id)
+                        ->whereIn('sppsb.status',['D','B','P','R'])
+                        ->get();
+
+        return Datatables::of($report)
+            ->addColumn('action', function ($report) {
+                return '<div class="btn-group btn-group-sm" role="group" aria-label="...">
+                                <a href="sppsb-detail/'.$report->id.'" class="icon-button icon-color-grey">
+                                    <i class="fa fa-search"></i>
+                                </a>
+                            </div>';
+            })
+            ->make(true);
+    }
+
+    public function getRate($date1,$date2,$id){
+        $d1 = strtotime($date1);
+        $d2 = strtotime($date2);
+        $min_date = min($d1, $d2);
+        $max_date = max($d1, $d2);
+        $month = 1;
+        $rateIjp = '0';
+        while (($min_date = strtotime("+1 MONTH", $min_date)) <= $max_date) {
+            $month++;
+        }
+        $rate = Rate::findOrFail($id);
+        
+        if($month<=3){
+            $rateIjp = $rate->tiga;  
+        }elseif($month==4){
+            $rateIjp = $rate->empat;
+        }elseif($month==5){
+            $rateIjp = $rate->lima;
+        }elseif($month==6){
+            $rateIjp = $rate->enam;
+        }elseif($month==7){
+            $rateIjp = $rate->tujuh;
+        }elseif($month==8){
+            $rateIjp = $rate->delapan;
+        }elseif($month==9){
+            $rateIjp = $rate->sembilan;
+        }elseif($month==10){
+            $rateIjp = $rate->sepuluh;
+        }elseif($month==11){
+            $rateIjp = $rate->sebelas;
+        }elseif($month==12){
+            $rateIjp = $rate->duabelas;
+        }
+
+        return $rateIjp;
+    }
+
+    /// fungsi konversi angka ke terbilang
+    function terbilang($x)
+    {
+        
+      $abil = array("", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas");
+      if ($x < 12)
+        return " " . $abil[$x];
+      elseif ($x < 20)
+        return $this->terbilang($x - 10) . " belas";
+      elseif ($x < 100)
+        return $this->terbilang($x / 10) . " puluh" . $this->terbilang($x % 10);
+      elseif ($x < 200)
+        return " seratus" . $this->terbilang($x - 100);
+      elseif ($x < 1000)
+        return $this->terbilang($x / 100) . " ratus" . $this->terbilang($x % 100);
+      elseif ($x < 2000)
+        return " seribu" . $this->terbilang($x - 1000);
+      elseif ($x < 1000000)
+        return $this->terbilang($x / 1000) . " ribu" . $this->terbilang($x % 1000);
+      elseif ($x < 1000000000)
+        return $this->terbilang($x / 1000000) . " juta" . $this->terbilang($x % 1000000);
+     
+    }
+
+}
