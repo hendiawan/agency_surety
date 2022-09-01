@@ -160,9 +160,7 @@
     </div>
     <!-- modal -->
 
-    <div id="footer">
-        2017 &copy; Surety Bond Online v1.0. Powered by <a href="#">CalateSectorSeven</a>
-    </div>
+  
 
     <!-- Scripts -->
     <script type="text/javascript" src="{{ asset('/js/jquery.js') }}"></script>
